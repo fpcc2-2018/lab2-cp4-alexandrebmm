@@ -1,3 +1,6 @@
+### UFCG/CEEI/UASC/PPGCC/FPCC2-18.1
+#### Alexandre Medeiros
+
 # Sessões, buscas e navegação na wikimedia
 
 Este repo é a semente para uma análise de padrões de busca e navegação em páginas de projetos da wikimedia (provavelmente wikipedia).
