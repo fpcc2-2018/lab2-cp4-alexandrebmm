@@ -1,6 +1,10 @@
 ### UFCG/CEEI/UASC/PPGCC/FPCC2-18.1
 #### Alexandre Medeiros
 
+# RPubs
+
+A **Análise completa** referente ao Lab2Cp4 poderá ser encontrada [nesse link](http://rpubs.com/alexandrebmm/lab2cp4).
+
 # Sessões, buscas e navegação na wikimedia
 
 Este repo é a semente para uma análise de padrões de busca e navegação em páginas de projetos da wikimedia (provavelmente wikipedia).

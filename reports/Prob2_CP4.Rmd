@@ -1,0 +1,263 @@
+---
+title: "Lab2 - CP4 - Alexandre Medeiros"
+output: html_document
+---
+
+##### UFCG - CEEI - UASC - PPGCC - FPCC2
+##### Prof. Nazareno Andrade
+##### Alexandre Bruno de Macedo Medeiros
+##### Problema 2 - Checkpoint 4: Análise Completa
+
+___
+___
+
+A **Wikimedia Foundation** é uma entidade filantrópica, dedicada a incentivar a produção, desenvolvimento e distribuição de conteúdo livre e multilíngue e a disponibilizar ao público, integralmente, esses projetos baseados em wiki de forma totalmente livre. A Wikimedia Foundation opera alguns dos maiores projetos de referência editados colaborativamente em todo o mundo, incluindo a Wikipédia, um dos 10 sites mais visitados no mundo.
+
+Em 2016, visando recrutar um Analista de Dados para o seu departamento de descoberta, disponibilizou uma tarefa a ser realizada pelos candidatos. Essa tarefa consistia em analisar um registro de eventos (*event log*) reduzido, coletados durante 8 dias (de 1 a 8 de março de 2016). A descrição desta atividade pode ser encontrada [aqui](https://github.com/wikimedia-research/Discovery-Hiring-Analyst-2016).
+
+Conforme está descrito no Canvas, nossa missão aqui é seguir as instruções colocadas na tarefa original. Para tanto, procuraremos adotar as boas práticas de marcas, canais e visualização de gráficos que foram exploradas nos *checkpoints* anteriores.
+
+___
+
+### Configurando ambiente
+
+Como é de praxe para arquivos R, inicialmente precisamos importar as bibliotecas necessárias, que nos darão acesso às funções úteis para o tratamento e observação dos dados ao longo deste relatório.
+
+```{r setup, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(here)
+library(lubridate)
+library(knitr)
+
+theme_set(theme_bw())
+```
+
+Alteramos o *script* R `import-events_to_searches.R` que foi pré-disponibilizado para esta atividade. Nele foi incluída uma nova variável para o tempo de duração de sessão (`session_length`), que será utilizada na pergunta 4.
+
+___
+
+### Lendo os dados processados
+
+A seguir, carregamos os dados processados pelo referido *script* R.
+
+```{r ETL, warning=FALSE, message=FALSE}
+buscas =
+    read_csv(here::here("data/search_data.csv"))
+```
+
+___
+
+### Descrevendo as variáveis aleatórias
+
+As variáveis aleatórias presentes nos dados tratados pelo *script* R são descritar a seguir:
+
+* `session_id` - Identificador único de cada sessão
+* `search_index` - Número ordinal que indica cada busca realizada em uma sessão
+* `session_start_timestamp` - Datetime do início do evento, com formato YYYYMMDDhhmmss
+* `session_start_date` - Datetime do início do evento, com formato YYYY-MM-dd HH:mm:ss
+* `session_length` - Tempo de duração de uma sessão
+* `date` - Variável que indica a data do evento
+* `group` - Um label para categorias "a" ou "b"
+* `results` - Quantidade de resultados retornados ao usuário na busca
+* `num_clicks` - Quantidade de páginas visitadas pelo usuário a partir da busca
+* `first_click` - Posição da ocorrência nos resultados que o usuário visitou primeiro
+
+Com o objetivo de evitar processamento repetido ao longo deste trabalho, extraímos dos dados acima descritos 1 nova variável:
+
+* `date` - Data em que ocorreu o evento, no formato YYYY-mm-dd
+
+```{r, warning=FALSE, message=FALSE}
+buscas =
+    buscas %>%
+    mutate(
+        date = as.Date(ymd(as.Date(session_start_date))))
+```
+
+___
+
+### Limpando os dados
+
+Em todo grande volume de dados, é natural que encontremos dados anômalos. Ao nos deparar com essa realidade, precisamos tomar alguma decisão a respeito do que fazer com esses casos absurdos.
+
+Por exemplo, deve ser imprescindível que o valor do "primeiro clique" (`first_click`) esteja entre 1 e a quantidade de resultados que foram retornados na busca.
+
+Do mesmo modo, o `first_click` deverá existir sempre que o número de cliques for maior ou igual a zero  (`num_clicks > 0`).
+
+```{r clean, warning=FALSE, message=FALSE}
+buscas =
+    buscas %>%
+    filter((first_click <= results) | (is.na(first_click) & num_clicks == 0))
+```
+
+Decidimos por excluir as entradas que possuem esse comportamento, pois são inconsistentes com o mundo real.
+
+___
+
+#### **1. Qual é a nossa taxa de cliques diária geral? Como ela varia entre os grupos?**
+
+A "taxa de cliques"" é a proporção de sessões de busca em que o usuário clicou em um dos resultados apresentados.
+
+A partir de então, identificamos a variável `num_clicks` como a quantidade de vezes que um usuário visita uma página a partir dos resultados de uma busca (valor *visitPage* para a variável `action` do *dataset* original).
+
+```{r}
+buscas %>%
+    ggplot(aes(x = "", y = num_clicks)) +
+    geom_jitter(alpha = 0.1) +
+    labs(title = "Visão geral dos dados",
+         subtitle = "Sessão de busca x Número de cliques da sessão",
+         x = "Sessão de busca",
+         y = "Número de cliques da sessão",
+         caption = "Fonte: Wikimedia Foundation")
+```
+
+Observamos que a maioria absoluta das sessões concentram até 5 cliques nos resultados.
+
+Assim sendo, para responder à **Pergunta 1** agrupando os dados por data da medição, grupo e número de cliques, considerando a variável `num_clicks` quando esta tiver valor maior do que zero (`num_clicks > 0`).
+
+```{r}
+pergunta1 = buscas %>%
+    filter(results > 0 & !is.na(num_clicks)) %>%
+    group_by(date, group, num_clicks) %>%
+    summarise(n = n()) %>% 
+    mutate(qtde = n / sum(n) * 100) %>%
+    filter(num_clicks > 0)
+
+pergunta1 %>%
+    ggplot(aes(x = date, y =  qtde, fill=group)) + 
+    geom_bar(stat = 'identity', position="dodge") +
+    scale_y_continuous(limits = c(0, 100)) +
+    labs(title="Taxa de cliques diária geral",
+         subtitle="data da medição x taxa geral de cliques",
+         x="Data da medição", 
+         y="Taxa de cliques (%)",
+         caption = "Fonte: Wikimedia Foundation",
+         fill = "Grupos") +
+    theme(axis.text.x = element_text(angle = 20, hjust = 1)) +
+    scale_x_date(date_labels="%d-%b-%Y", date_breaks  ="1 day")
+
+```
+
+A partir de então, observamos que a taxa média de cliques referentes ao Grupo A é maior do que a mesma taxa para o Grupo B, em todos os dias medidos.
+
+___
+
+#### **2. Quais resultados as pessoas tendem a clicar primeiro? Como isso muda no dia-a-dia?**
+
+Primeiro verificaremos qual a posição dos resultados os usuários tendem a clicar primeiro. Para isso, agruparemos a variável `first_click`, filtrando os possível valores nulos (afinal, desejamos saber os resultados que as pessoas tendem a clicar primeiro).
+
+```{r}
+pergunta2a = buscas %>%
+    filter(first_click > 0) %>%
+    group_by(first_click) %>%
+    summarise(qtde = n())
+
+pergunta2a %>%
+    ggplot(aes(x = first_click, y = qtde)) +
+    geom_bar(col="black", stat = "identity", fill = "light grey") +
+    labs(title = "Posição do primeiro clique nos resultados",
+         subtitle = "Posição do clique vs Quantidade",
+         x="Posição do resultado clicado (º)",
+         y="Quantidade",
+         caption = "Fonte: Wikimedia Foundation")
+
+```
+
+Observamos que majoritariamente o clique é efetuado no primeiro resultado da busca, o que ocasiona uma longa cauda a partir da esquerda para a direita.
+
+Como a quantidade tende a se encontrar em valores baixos, utilizaremos a escala de log (função `scale_y_log10()`) para melhor visualizar o comportamento desses dados:
+
+```{r}
+pergunta2a %>%
+    ggplot() +
+    geom_bar(aes(x = first_click, y = qtde), col = "black", stat = "identity", fill = "green") +
+    labs(title = "Posição do primeiro clique nos resultados",
+         subtitle = "Utilizando escala logarítmica no eixo Y",
+         x="Posição do resultado clicado (º)",
+         y="Quantidade",
+         caption = "Fonte: Wikimedia Foundation") +
+    scale_y_log10()
+```
+
+Observamos que há uma tendência em clique nos primeiros 20 itens, haja visto o gráfico apresentar uma grande discrepância entre os itens que os usuários primeiro clicam nas buscas.
+
+Feito isso, agora observaremos como esse comportamento varia entre os diversos dias estudados. Para tanto, serão filtrados para que apenas os resultados que possuem menos de 25 registros sejam indexados na visualização, uma vez que o comportamento da cauda à direita tende a ser constante e a maior parte dos dados tende a se concentrar até essa faixa de valor.
+
+```{r}
+pergunta2b = buscas %>%
+    filter(first_click <= 25) %>%
+    group_by(date, first_click) %>%
+    summarise(qtde = n())
+
+pergunta2b %>%
+    ggplot(aes(x = first_click, y = qtde)) +
+    geom_bar(col = "black", stat = "identity", fill = "light blue") +
+        labs(title = "Posição do primeiro clique nos resultados",
+         subtitle = "Por dia, até o 25º resultado",
+         x="Posição do resultado clicado (º)",
+         y="Quantidade",
+         caption = "Fonte: Wikimedia Foundation") +
+    facet_wrap(~date, ncol = 4, nrow = 2)
+```
+
+E assim, após isolar os dados para cada dia, observamos que o comportamento geral do primeiro clique é semelhante ao comportamento diário, uma vez que (em ambas as representações gráficas) a quantidade de `first_click` tende a se encontrar nas primeiras posições dos resultados, e a partir de então é identificada uma cauda à direita.
+
+___
+
+#### **3. Qual a nossa taxa geral diária de zero resultados? Como ela varia entre os grupos?**
+
+A **taxa de zero resultados** é a proporção de buscas que retornam 0 resultados.
+
+De maneira análoga ao que fora feito nas questões anteriores, queremos saber qual a taxa diária de zero e seu comportamento entre os grupos.
+
+Para tanto, identificaremos a média de resultados zero, agrupando os dados por data de medição e grupo.
+
+```{r}
+pergunta3 = buscas %>%
+    group_by(date, group) %>%
+    summarise(media_zero = mean(results == 0))
+
+pergunta3 %>%
+    ggplot(aes(x = date, y = media_zero*100, fill=group)) +
+    geom_bar(stat="identity", position="dodge") +
+    labs(title="Taxa de buscas que não retornaram resultados",
+         subtitle="Data da medição vs Busca sem resultado",
+         x="Data da medição",
+         y="Buscas sem resultados (%)",
+         caption = "Fonte: Wikimedia Foundation",
+         fill="Grupos") +
+    theme(axis.text.x = element_text(angle = 20, hjust = 1)) +
+    scale_x_date(date_labels="%d-%b-%Y", date_breaks  ="1 day")
+```
+
+Sem grandes discrepâncias, em todos os dias a taxa de zero resultados apresenta valores entre 15% ~ 20%, para ambos os grupos, não podendo ser possível afirmar que eles tem comportamentos diferentes.
+
+Observamos que dos 8 dias apresentados, em 4 deles o Grupo A possui menor taxa de zero resultados que o Grupo B, e o cenário se inverte para a outra metade.
+
+___
+
+#### **4. A *duração da sessão* é aproximadamente o tempo entre o primeiro e o último evento de uma sessão. Escolha uma das variáveis presentes dos dados e descreva sua relação com o tamanho da sessão. Visualize o relacionamento.**
+
+A "duração da sessão" foi sumarizada na variável `session_length`, a partir da diferença entre o final de uma sessão e o seu início.
+
+Escolhemos a variável `group` para relacionar com a duração de sessão, tendo como objetivo identificar se os usuários de um dos grupos tende a permanecer mais tempo online.
+
+
+```{r}
+pergunta4 = buscas %>%
+    group_by(session_id)
+
+pergunta4 %>% 
+    ggplot(aes(x = group, y = session_length, col = group)) + 
+    geom_boxplot() +
+    scale_y_log10() +
+    labs(title="Relação entre grupos e duração de sessão",
+         subtitle="Grupos vs. Duração de sessão",
+         x="Grupos",
+         y="Duração de sessão",
+         caption = "Fonte: Wikimedia Foundation",
+         fill="Grupos")
+```
+
+Observamos, através do gráfico apresentado acima, que o Grupo B tende a ter sessões de busca maiores do que o Grupo A.
