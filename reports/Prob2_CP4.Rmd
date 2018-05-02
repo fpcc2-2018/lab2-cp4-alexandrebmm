@@ -34,7 +34,7 @@ library(knitr)
 theme_set(theme_bw())
 ```
 
-Alteramos o *script* R `import-events_to_searches.R` que foi pré-disponibilizado para esta atividade. Nele foi incluída uma nova variável para o tempo de duração de sessão (`session_length`), que será utilizada na pergunta 4.
+Alteramos o *script* R `import-events_to_searches.R` que foi pré-disponibilizado para esta atividade. Nele foi incluída uma nova variável que derivará o tempo de duração de sessão (`session_length`), utilizada na pergunta 4.
 
 ___
 
@@ -57,8 +57,8 @@ As variáveis aleatórias presentes nos dados tratados pelo *script* R são desc
 * `search_index` - Número ordinal que indica cada busca realizada em uma sessão
 * `session_start_timestamp` - Datetime do início do evento, com formato YYYYMMDDhhmmss
 * `session_start_date` - Datetime do início do evento, com formato YYYY-MM-dd HH:mm:ss
-* `session_length` - Tempo de duração de uma sessão
-* `date` - Variável que indica a data do evento
+* `session_end_timestamp` - Datetime do fim do evento, com formato YYYYMMDDhhmmss
+* `session_end_date` - Datetime do fim do evento, com formato YYYY-MM-dd HH:mm:ss
 * `group` - Um label para categorias "a" ou "b"
 * `results` - Quantidade de resultados retornados ao usuário na busca
 * `num_clicks` - Quantidade de páginas visitadas pelo usuário a partir da busca
@@ -66,7 +66,7 @@ As variáveis aleatórias presentes nos dados tratados pelo *script* R são desc
 
 Com o objetivo de evitar processamento repetido ao longo deste trabalho, extraímos dos dados acima descritos 1 nova variável:
 
-* `date` - Data em que ocorreu o evento, no formato YYYY-mm-dd
+* `date` - Indica a data em que ocorreu o evento, no formato YYYY-mm-dd
 
 ```{r, warning=FALSE, message=FALSE}
 buscas =
@@ -239,14 +239,22 @@ ___
 
 #### **4. A *duração da sessão* é aproximadamente o tempo entre o primeiro e o último evento de uma sessão. Escolha uma das variáveis presentes dos dados e descreva sua relação com o tamanho da sessão. Visualize o relacionamento.**
 
-A "duração da sessão" foi sumarizada na variável `session_length`, a partir da diferença entre o final de uma sessão e o seu início.
+A "duração da sessão" será sumarizada na variável `session_length`, a partir da diferença entre o final de uma sessão e o seu início, utilizando para tal a grandeza de tempo **segundos**, uma medida discreta.
 
 Escolhemos a variável `group` para relacionar com a duração de sessão, tendo como objetivo identificar se os usuários de um dos grupos tende a permanecer mais tempo online.
+
+Para garantir consistência nos dados, filtraremos apenas as sessões com duração maior que 0 segundos, visto que uma sessão de busca com tempo zero (ou negativo) é uma anomalia.
 
 
 ```{r}
 pergunta4 = buscas %>%
-    group_by(session_id)
+    group_by(session_id) %>%
+    mutate(
+        session_length = as.numeric(
+            difftime(last(session_end_date), first(session_start_date),
+                     tz = "UTC",
+                     units="secs"))) %>%
+    filter(session_length > 0)
 
 pergunta4 %>% 
     ggplot(aes(x = group, y = session_length, col = group)) + 
@@ -255,9 +263,12 @@ pergunta4 %>%
     labs(title="Relação entre grupos e duração de sessão",
          subtitle="Grupos vs. Duração de sessão",
          x="Grupos",
-         y="Duração de sessão",
+         y="Duração de sessão (em segundos)",
          caption = "Fonte: Wikimedia Foundation",
-         fill="Grupos")
+         fill="Grupos") +
+    scale_y_log10()
 ```
 
-Observamos, através do gráfico apresentado acima, que o Grupo B tende a ter sessões de busca maiores do que o Grupo A.
+Por fim, observamos através do gráfico apresentado acima que o Grupo A tende a ter sessões de busca maiores do que o Grupo B, inclusive com pouco mais de 75% do dados de A sendo maiores que 50% dos dados de B.
+
+
