@@ -265,8 +265,7 @@ pergunta4 %>%
          x="Grupos",
          y="Duração de sessão (em segundos)",
          caption = "Fonte: Wikimedia Foundation",
-         fill="Grupos") +
-    scale_y_log10()
+         fill="Grupos")
 ```
 
 Por fim, observamos através do gráfico apresentado acima que o Grupo A tende a ter sessões de busca maiores do que o Grupo B, inclusive com pouco mais de 75% do dados de A sendo maiores que 50% dos dados de B.
