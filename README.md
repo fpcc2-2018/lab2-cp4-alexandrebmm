@@ -3,7 +3,8 @@
 
 # RPubs
 
-A **Análise completa** referente ao Lab2Cp4 poderá ser encontrada [nesse link](http://rpubs.com/alexandrebmm/lab2cp4).
+* Lab2CP4 - Análise completa - Disponível [aqui](http://rpubs.com/alexandrebmm/lab2cp4).
+* Lab3CP1 - Inferência via ICs - Disponível [aqui](http://rpubs.com/alexandrebmm/lab3cp1).
 
 # Sessões, buscas e navegação na wikimedia
 

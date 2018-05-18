@@ -1,0 +1,282 @@
+---
+title: "Lab2 - CP4 - Alexandre Medeiros"
+output: html_document
+---
+
+##### UFCG - CEEI - UASC - PPGCC - FPCC2
+##### Prof. Nazareno Andrade
+##### Alexandre Bruno de Macedo Medeiros
+##### Problema 3 - Checkpoint 1: Inferência via ICs
+
+___
+___
+
+Nossa missão aqui é produzir uma versão resumida do [relatório](http://rpubs.com/alexandrebmm/lab2cp4) referente ao Laboratório 2 - Checkpoint 4, utilizando *inferência estatística*, realizada através de intervalos de confiança e bootstrap (conforme está descrito no Canvas).
+
+___
+
+### Configurando ambiente
+
+Importamos as bibliotecas utilizadas.
+
+```{r setup, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(here)
+library(lubridate)
+library(knitr)
+library(boot)     # <-- Para bootstrap!
+
+theme_set(theme_bw())
+```
+
+Alteramos o *script* R `import-events_to_searches.R` que foi pré-disponibilizado para esta atividade. Nele foi incluída uma nova variável que derivará o tempo de duração de sessão (`session_length`), utilizada na pergunta 4.
+
+___
+
+### Lendo os dados processados
+
+Carregamos os dados já processados.
+
+```{r ETL, warning=FALSE, message=FALSE}
+buscas =
+    read_csv(here::here("data/search_data.csv"))
+```
+
+___
+
+### Descrevendo as variáveis aleatórias
+
+As variáveis aleatórias presentes nos dados tratados pelo *script* R são descritar a seguir:
+
+* `session_id` - Identificador único de cada sessão
+* `search_index` - Número ordinal que indica cada busca realizada em uma sessão
+* `session_start_timestamp` - Datetime do início do evento, com formato YYYYMMDDhhmmss
+* `session_start_date` - Datetime do início do evento, com formato YYYY-MM-dd HH:mm:ss
+* `session_end_timestamp` - Datetime do fim do evento, com formato YYYYMMDDhhmmss
+* `session_end_date` - Datetime do fim do evento, com formato YYYY-MM-dd HH:mm:ss
+* `group` - Um label para categorias "a" ou "b"
+* `results` - Quantidade de resultados retornados ao usuário na busca
+* `num_clicks` - Quantidade de páginas visitadas pelo usuário a partir da busca
+* `first_click` - Posição da ocorrência nos resultados que o usuário visitou primeiro
+
+Com o objetivo de evitar processamento repetido ao longo deste trabalho, extraímos dos dados acima descritos 1 nova variável:
+
+* `date` - Indica a data em que ocorreu o evento, no formato YYYY-mm-dd
+
+```{r, warning=FALSE, message=FALSE}
+buscas =
+    buscas %>%
+    mutate(
+        date = as.Date(ymd(as.Date(session_start_date))))
+```
+
+___
+
+### Limpando os dados
+
+Em todo grande volume de dados, é natural que encontremos dados anômalos. Ao nos deparar com essa realidade, precisamos tomar alguma decisão a respeito do que fazer com esses casos absurdos.
+
+Por exemplo, deve ser imprescindível que o valor do "primeiro clique" (`first_click`) esteja entre 1 e a quantidade de resultados que foram retornados na busca.
+
+Do mesmo modo, `first_click` existirá apenas se o número de cliques for maior ou igual a zero  (`num_clicks > 0`).
+
+```{r clean, warning=FALSE, message=FALSE}
+buscas =
+    buscas %>%
+    filter((first_click <= results) | (is.na(first_click) & num_clicks == 0))
+```
+
+Decidimos por excluir as entradas que possuem esse comportamento, pois são inconsistentes com o mundo real.
+
+___
+___
+
+##### Como sugestão apresentada pelo professor, utilizaremos a biblioteca `boot`, com 5000 _bootstraps_.
+___
+___
+
+### -- perguntas
+
+#### **1. Qual é a nossa taxa de cliques diária geral? Como ela varia entre os grupos?**
+
+Definimos a "taxa de cliques" como sendo a proporção de sessões de busca em que o usuário clica em um dos resultados apresentados.
+
+```{r}
+amostra = sample_n(buscas, 1000)
+
+set.seed(1)
+
+funcao_bootstrap = function(data, index){
+    d = data %>% 
+        slice(index) %>% 
+        group_by(group) %>% 
+        summarise(media_grupo = mean(num_clicks)) %>% 
+        pull(media_grupo)
+    
+    return(d[1] - d[2])
+}
+
+bootstraps = boot(data = amostra, 
+                  statistic = funcao_bootstrap, # <- referência para a função 
+                  R = 5000) # número de bootstraps
+
+glimpse(bootstraps$t)
+
+```
+
+```{r}
+value = tibble(estatistica = as.double(bootstraps$t))
+
+limite_lower = quantile(value$estatistica, 0.025)
+limite_upper = quantile(value$estatistica, 0.975)
+
+value %>%
+    ggplot(aes(x = estatistica)) + 
+    geom_histogram(fill = "white", color = "pink") + 
+    geom_vline(xintercept = limite_lower[[1]]) + 
+    geom_vline(xintercept = limite_upper[[1]])
+
+boot.ci(bootstraps, conf = 0.95, type = "basic")
+```
+
+Com uma confiança de 95%, assumimos que a taxa média de clique diária está entre os valores acima apresentados tanto no gráfico, quanto na saída da função `boot.ci`.
+
+
+```{r}
+#-- comparando o mesmo grupo A/A
+grupoA = buscas %>%
+    filter(group == "a")
+
+amostra_a1 = sample_frac(grupoA, 0.5, replace = FALSE) %>%
+    mutate(grupoA = 1)
+
+amostra_a2 = sample_frac(grupoA, 0.5, replace = FALSE) %>%
+    mutate(grupoA = 2)
+
+amostras = bind_rows(amostra_a1, amostra_a2)
+
+fun.boot = function(data, index) {
+    cliques_group = data %>%
+        slice(index) %>%
+        group_by(date, grupoA, num_clicks) %>%
+        summarise(n = n()) %>% 
+        mutate(qtde = n / sum(n) * 100) %>%
+        ungroup()
+    
+    taxas_grupo_a1 = cliques_group %>% 
+        filter(num_clicks > 0, grupoA == 1) %>%
+        group_by(date) %>%
+        summarise(taxas_cliques_group = sum(qtde)) %>%
+        pull(taxas_cliques_group)
+    
+    taxas_grupo_a2 = cliques_group %>% 
+        filter(num_clicks > 0, grupoA == 2) %>%
+        group_by(date) %>%
+        summarise(taxas_cliques_group = sum(qtde)) %>%
+        pull(taxas_cliques_group)
+    
+    return(mean(taxas_grupo_a1) - mean(taxas_grupo_a2))
+}
+
+res.boot <- boot(data = amostras,
+                 statistic = fun.boot,
+                 R = 5000)
+
+boot.ci(boot.out = res.boot, conf = 0.95, type = "basic") 
+```
+
+Com um intervalo de confiança de 95%, e baseando que o valor 0 (zero) está incluído no intervalo, afirmamos que não há como garantir que existe diferença entre as médias das taxas.
+
+
+```{r}
+#-- comparando grupos distintos A/B
+grupoA = buscas %>% filter(group == "a")
+grupoB = buscas %>% filter(group == "b")
+
+amostra_a = sample_frac(grupoA, 0.5, replace = FALSE)
+amostra_b = sample_frac(grupoB, 0.5, replace = FALSE)
+
+amostras = bind_rows(amostra_a, amostra_b)
+
+fun.boot = function(data, index) {
+    cliques_group = data %>%
+        slice(index) %>%
+        group_by(date, group, num_clicks) %>%
+        summarise(n = n()) %>% 
+        mutate(qtde = n / sum(n) * 100) %>%
+        ungroup()
+    
+    taxas_grupo_a = cliques_group %>% 
+        filter(num_clicks > 0, group == "a") %>%
+        group_by(date) %>%
+        summarise(taxas_cliques_group = sum(qtde)) %>%
+        pull(taxas_cliques_group)
+    
+    taxas_grupo_b = cliques_group %>% 
+        filter(num_clicks > 0, group == "b") %>%
+        group_by(date) %>%
+        summarise(taxas_cliques_group = sum(qtde)) %>%
+        pull(taxas_cliques_group)
+    
+    return(mean(taxas_grupo_a) - mean(taxas_grupo_b))
+}
+
+res.boot <- boot(data = amostras,
+                 statistic = fun.boot,
+                 R = 2000)
+
+boot.ci(boot.out = res.boot, conf = 0.95, type = "basic") 
+```
+
+Com 95% de confiança, afirmamos que a média das taxas geral diárias de cliques do grupo A é maior que a média das taxas diárias de cliques do grupo B, uma vez que o 0 "zero" não está incluído no intervalo e o intervalo é positivo.
+
+
+___
+
+#### ---
+
+#### **2. Quais resultados as pessoas tendem a clicar primeiro? Como isso muda no dia-a-dia?**
+
+(...não feito ainda)
+
+
+___
+
+
+#### ---
+
+#### **3. Qual a nossa taxa geral diária de zero resultados? Como ela varia entre os grupos?**
+
+```{r}
+amostra3 = sample_n(buscas, 1000)
+
+fun.boot <- function(dado, indices) {
+  taxa_zero <- dado %>%
+    slice(indices) %>%
+    group_by(group, results) %>%
+    summarise(n = n()) %>% 
+    mutate(taxa_zero = n / sum(n) * 100)  %>%
+    ungroup()
+  
+  taxa_a <- taxa_zero %>% 
+    filter(results == 0, group == "a") %>%
+    pull(taxa_zero)
+  
+  taxa_b <- taxa_zero %>% 
+    filter(results == 0, group == "b") %>%
+    pull(taxa_zero)
+  
+  return(taxa_a - taxa_b)
+}
+
+res.boot <- boot(data = amostra3, 
+                 statistic = fun.boot, 
+                 R = 5000)
+
+boot.ci(boot.out = res.boot, conf = 0.95, type = "basic")
+```
+
+
+A diferença das médias das taxas gerou um IC que possui o zero incluído. Assim, com 95% de confiança, podemos concluir que não há evidências que existe diferença entre as médias das taxas de cliques dos grupos A e B.
